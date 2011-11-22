@@ -3,6 +3,8 @@
 interface Application_DataGrid_DataSource_Interface
 {
 
+    public function getPaginator();
+
     public function getPage();
 
     public function setPage($page);
@@ -19,11 +21,10 @@ interface Application_DataGrid_DataSource_Interface
 
     public function setSortOrder($sortOrder);
 
-    public function getDefaultSortField();
-
-    public function setDefaultSortField($defaultSortField);
-
     public function getResults();
 
     public function getCount();
+    
+    public function generateColumns();
 }
+

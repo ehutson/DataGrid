@@ -1,158 +1,265 @@
 <?php
 
 use Doctrine\ORM\Query;
+use Doctrine\ORM\Query\AST;
 
 class Application_DataGrid_DataSource_Doctrine2 implements Application_DataGrid_DataSource_Interface
 {
 
     /**
-     *
+     * The Doctrine2 Query Builder
      * @var Query
      */
-    protected $query;
+    protected $queryBuilder;
+
+    /**
+     * The Doctrine2 Entity Manager
+     * @var \Doctrine\ORM\EntityManager
+     */
+    protected $entityManager;
+
+    /**
+     *
+     * @var Zend_Paginator
+     */
+    protected $paginator;
+
+    /**
+     * The page number we're currently on
+     * @var integer
+     */
     protected $page = 0;
-    protected $resultsPerPage = 20;
+
+    /**
+     * The number of results to show per page
+     * @var integer
+     */
+    protected $resultsPerPage = 10;
+
+    /**
+     * The column name that we're sorting on
+     * @var string
+     */
     protected $sortField;
+
+    /**
+     * The order that we're sorting (asc or desc)
+     * @var string
+     */
     protected $sortOrder;
-    protected $defaultSortField = 'id';
 
-    public function __construct($source)
+    /**
+     * An internal container for information about the fields being returned
+     * by the SELECT clause in the query builder
+     * @var array
+     */
+    protected $fields = array();
+
+    /**
+     *
+     * @param Doctrine\ORM\EntityManager $entityManager
+     * @param Doctrine\ORM\QueryBuilder $source 
+     */
+    public function __construct(Doctrine\ORM\EntityManager $entityManager, Doctrine\ORM\QueryBuilder $source)
     {
-        switch ($source)
-        {
-            case ($source instanceof Doctrine\ORM\QueryBuilder) :
-                $this->query = $source->getQuery();
-                break;
-            case ($source instanceof Doctrine\ORM\Query) :
-                $this->query = $query;
-                break;
-            case ($source instanceof Doctrine\ORM\Entity\EntityRepository) :
-                $this->query = $source->createQueryBuilder('al')->getQuery();
-                break;
-            default:
-                throw new Application_DataGrid_Exception('Unknown source given, source must either be an entity, query, or querybuilder object.');
-                break;
-        }
-
-        //$this->setColumns();
+        $this->entityManager = $entityManager;
+        $this->queryBuilder = $source;
+        $this->setFields();
     }
 
+    /**
+     * Returns the Zend Paginator instance
+     * @return Zend_Paginator
+     */
+    public function getPaginator()
+    {
+        return $this->paginator;
+    }
+
+    /**
+     * Returns the current page number
+     * @return type 
+     */
     public function getPage()
     {
         return $this->page;
     }
 
+    /**
+     * Sets the current page number
+     * @param integer $page
+     * @return Application_DataGrid_DataSource_Doctrine2 
+     */
     public function setPage($page)
     {
         $this->page = $page;
         return $this;
     }
 
+    /**
+     * Gets the number of results shown per page
+     * @return integer
+     */
     public function getResultsPerPage()
     {
         return $this->resultsPerPage;
     }
 
+    /**
+     * Sets the number of results shown per page
+     * @param integer $resultsPerPage
+     * @return Application_DataGrid_DataSource_Doctrine2 
+     */
     public function setResultsPerPage($resultsPerPage)
     {
         $this->resultsPerPage = $resultsPerPage;
         return $this;
     }
 
+    /**
+     * Gets the field name that we're sorting on.
+     * This should have the same name as the dataField in the corresponding Column
+     * @see Application_DataGrid_Column
+     * @return string 
+     */
     public function getSortField()
     {
-        if (is_null($this->sortField))
-        {
-            return $this->getDefaultSortField();
-        }
         return $this->sortField;
     }
 
+    /**
+     * Sets the field name that we're sorting on.
+     * This should have the same name as the dataField in the corresponding Column
+     * @see Application_DataGrid_Column
+     * @param string $sortField
+     * @return Application_DataGrid_DataSource_Doctrine2 
+     */
     public function setSortField($sortField)
     {
         $this->sortField = $sortField;
         return $this;
     }
 
+    /**
+     * Gets the sort order (asc or desc)
+     * @see Application_DataGrid
+     * @return string
+     */
     public function getSortOrder()
     {
         return $this->sortOrder;
     }
 
+    /**
+     * Sets the sort order (asc or desc)
+     * @see Application_DataGrid
+     * @param string $sortOrder
+     * @return Application_DataGrid_DataSource_Doctrine2 
+     */
     public function setSortOrder($sortOrder)
     {
         $this->sortOrder = $sortOrder;
         return $this;
     }
 
-    public function getDefaultSortField()
+    public function generateColumns()
     {
-        return $this->defaultSortField;
-    }
-
-    public function setDefaultSortField($defaultSortField)
-    {
-        $this->defaultSortField = $defaultSortField;
-        return $this;
-    }
-
-    private function setColumns()
-    {
-        //$this->columns = new Application_DataGrid_Column();
-
-        $selectClause = $this->query->getAST()->selectClause;
-        if (count($selectClause->selectExpressions) == 0)
+        $columns = array();
+        $fields = $this->getFields();
+        foreach ($fields as $key => $field)
         {
-            throw new \Exception('The grid query should contain at least one column, none found.');
+            $columns[] = new Application_DataGrid_Column($key, $field['title']);
         }
+        return $columns;
+    }
 
-
-        /* @var $selExpr Doctrine\ORM\Query\AST\SelectExpression */
-        foreach ($selectClause->selectExpressions as $selExpr)
+    /**
+     * Returns the internal fields container
+     * @return array
+     */
+    public function getFields()
+    {
+        if (empty($this->fields))
         {
-            /**
-             * Some magic needs to happen here.  If $selExpr isn't an instanceof
-             * Doctrine\ORM\Query\AST\PathExpression then it might be a custom
-             * expression like a vendor specific function.  We could use the
-             * $selExpr->fieldIdentificationVariable member which is the alias
-             * given to the special expression but sorting at this field could
-             * cause string effects.
-             * 
-             * For instance:  SELEECT DATE_FORMAT(datefield, "%Y") AS alias FROM sometable
-             * 
-             * When you say:  ORDER BY alias DESC
-             * 
-             * You could get other results when you do:
-             * 
-             * ORDER BY sometable.datefield DESC
-             * 
-             * The idea is to rely on the alias field by default because it would
-             * suite for most queries.  If someone would like to retrieve this expression
-             * specific into they can add a field filter.  $ds->addFieldFilter(new DateFormat_Field_Filter(), 'expression classname');
-             * 
-             * And info of the field would be extracted from this class, something like that. 
-             */
-            $expr = $selExpr->expression;
-            var_dump($selExpr);
+            $this->setFields();
+        }
+        return $this->fields;
+    }
 
-            /* @var $expr Doctrine\ORM\Query\AST\PathExpression */
-            if ($expr instanceof Doctrine\ORM\Query\AST\PathExpression)
+    /**
+     * Generates the list of fields used internally to map the columns back to
+     * the SELECT fields in the QueryBuilder
+     */
+    public function setFields()
+    {
+        if (empty($this->fields))
+        {
+            $ast = $this->queryBuilder->getQuery()->getAST();
+
+            $fieldNumber = 1;
+            $returnFields = array();
+            foreach ($ast->selectClause->selectExpressions as $selectExpression)
             {
-                $alias = $expr->identificationVariable;
-                $name = ($selExpr->fieldIdentificationVariable === null) ? $expr->field : $selExpr->fieldIdentificationVariable;
-                $label = ($selExpr->fieldIdentificationVariable === null) ? $name : $selExpr->fieldIdentificationVariable;
-                $index = (strlen($alias) > 0 ? ($alias . '.') : '') . $name;
-            }
-            else
-            {
-                $name = $selExpr->fieldIdentificationVariable;
-                $label = $name;
-                $index = null;
-            }
+                $expression = $selectExpression->expression;
 
+                // if the expression is a string, there is an alias used to get all fields
+                // to get all fields from the alias, we fetch the entity class and retrieve
+                // the metadata from it, so we can set the fields correctly
+                if (is_string($expression))
+                {
+                    // the expression itself is a pathexpression, where we can directly
+                    // fetch the title and field
 
-            echo "Name:  $name, Label:  $label, Index: $index<br>";
-            //$this->columns->add($name, $label, $index);
+                    $alias = $expression;
+                    $tableName = $this->_getModelFromAlias($alias);
+                    $metadata = $this->entityManager->getClassMetadata($tableName);
+
+                    foreach ($metadata->fieldMappings as $key => $detail)
+                    {
+                        $returnFields[$key]['title'] = $this->formatTitle($key);
+                        $returnFields[$key]['field'] = $alias . '.' . $key;
+                        $returnFields[$key]['type'] = $details['type'];
+                    }
+                }
+                elseif ($expression instanceof AST\PathExpression)
+                {
+                    $field = ($selectExpression->fieldIdentificationVariable != null) ? $selectExpression->fieldIdentificationVariable : $expression->field;
+                    $returnFields[$field]['title'] = $this->formatTitle($field);
+                    $returnFields[$field]['field'] = $expression->identificationVariable . '.' . $expression->field;
+                    $returnFields[$field]['type'] = '';
+                }
+                elseif ($expression instanceof AST\Subselect)
+                {
+                    //handle subselects. we only need the identification variable for the field
+                    $field = $selectExpression->fieldIdentificationVariable;
+                    $returnFields[$field]['title'] = $this->formatTitle($field);
+                    $returnFields[$field]['field'] = $field;
+                    $returnFields[$field]['type'] = '';
+                }
+                else
+                {
+                    $field = $selectExpression->fieldIdentificationVariable;
+
+                    //doctrine uses numeric keys for expressions which got no
+                    //identification variable, so the key will be set to the
+                    //current counter $i
+                    if ($field === null)
+                    {
+                        $field = $this->_getNameForExpression($expression);
+                        $key = $fieldNumber;
+                        $fieldNumber++;
+                    }
+                    else
+                    {
+                        $key = $field;
+                    }
+
+                    $returnFields[$field]['title'] = $this->formatTitle($field);
+                    $returnFields[$key]['field'] = $field;
+                    $returnFields[$key]['type'] = '';
+                }
+            }
+            $this->fields = $returnFields;
         }
     }
 
@@ -165,10 +272,10 @@ class Application_DataGrid_DataSource_Doctrine2 implements Application_DataGrid_
      */
     public function getDefaultSorting()
     {
-        if (null !== $this->query->getAST()->orderByClause)
+        if (null !== $this->queryBuilder->getQuery()->getAST()->orderByClause)
         {
             // support for 1 field only
-            $orderByClause = $this->query->getAST()->orderByClause;
+            $orderByClause = $this->queryBuilder->getQuery()->getAST()->orderByClause;
 
             /* @var $orderByItem Doctrine\ORM\Query\AST\OrderByItem */
             if ($orderByItem->expression instanceof \Doctrine\ORM\Query\AST\PathExpression)
@@ -186,32 +293,197 @@ class Application_DataGrid_DataSource_Doctrine2 implements Application_DataGrid_
         return null;
     }
 
+    /**
+     * Returns a Zend_Paginator instance containing the results from the QueryBuilder
+     * @see Zend_Paginator
+     * @return Zend_Paginator
+     */
     public function getResults()
     {
-        $hints = array();
 
         $page = $this->getPage();
-        $limitPerPage = $this->getResultsPerPage();
-        $offset = $limitPerPage * ($page - 1);
 
-        $sortField = $this->getSortField();
-        $sortOrder = (in_array($this->getSortOrder(), array('ASC', 'DESC')) ? strtoupper($this->getSortOrder()) : 'ASC');
+        $sortField = $this->getFieldForColumn($this->sortField);
+        $sortOrder = (in_array(strtoupper($this->getSortOrder()), array('ASC', 'DESC')) ? strtoupper($this->getSortOrder()) : 'ASC');
+        $this->queryBuilder->addOrderBy($sortField, $sortOrder);
 
+        $adapter = new Application_DataGrid_DataSource_Doctrine2_PaginationAdapter($this->queryBuilder->getQuery());
+        $adapter->useArrayResult();
+        $this->paginator = new Zend_Paginator($adapter);
+        $this->paginator->setCurrentPageNumber($page);
+        $this->paginator->setItemCountPerPage($this->getResultsPerPage());
 
-        $hints[\Doctrine\ORM\Query::HINT_CUSTOM_TREE_WALKERS] = array('Application_DataGrid_DataSource_Doctrine2_OrderByWalker');
-        $hints['sidx'] = $sortField;
-        $hints['sord'] = $sortOrder;
-
-
-        /* @var $paginateQuery \Doctrine\ORM\Query */
-        $paginateQuery = Application_DataGrid_DataSource_Doctrine2_Paginate::getPaginateQuery($this->query, $offset, $limitPerPage, $hints);
-        $results = $paginateQuery->getResult(Doctrine\ORM\Query::HYDRATE_ARRAY);
-        return $results;
+        return $this->paginator;
     }
 
+    /**
+     * Returns the total number of items
+     * @return int
+     */
     public function getCount()
     {
-        return Application_DataGrid_DataSource_Doctrine2_Paginate::count($this->query);
+        return $this->paginator->getTotalItemCount();
+    }
+
+    /**
+     * Generates the expression used in the select expression
+     *
+     * @param FunctionNode $expression
+     * @return string
+     */
+    private function _getNameForExpression($expression)
+    {
+        $str = '';
+
+        foreach ($expression as $key => $sub)
+        {
+            if ($sub instanceof AST\PathExpression)
+            {
+                $str .= $sub->identificationVariable . '.' . $sub->field;
+                if ($expression instanceof AST\Functions\FunctionNode)
+                {
+                    $str = $expression->name . '(' . $str . ')';
+                }
+                elseif ($expression instanceof AST\AggregateExpression)
+                {
+                    $str = $expression->functionName . '(' . $str . ')';
+                }
+                //when we got another array, we will call the method recursive and add
+                //brackets for readability.
+            }
+            elseif (is_array($sub))
+            {
+                $str .= '(' . $this->_getNameForExpression($sub) . ')';
+                //call the method recursive to get all names.
+            }
+            elseif (is_object($sub))
+            {
+                $str .= $this->_getNameForExpression($sub);
+                //key is numeric and value is a string, we probably got an
+                //arithmetic identifier (like "-" or "/")
+            }
+            elseif (is_numeric($key) && is_string($sub))
+            {
+                $str .= ' ' . $sub . ' ';
+                //we got a string value for example in an arithmetic expression
+                //(a.value - 1) the "1" here is the value we append to the string here
+            }
+            elseif ($key == 'value')
+            {
+                $str .= $sub;
+            }
+        }
+
+        return $str;
+    }
+
+    /**
+     * Finds a model for which an alias belongs.
+     *
+     * @param string $alias
+     * @return string The name of the entity.
+     */
+    private function _getModelFromAlias($alias)
+    {
+        $qb = $this->queryBuilder;
+        $fromParts = $qb->getDQLPart('from');
+
+        //first try to get the model from the from part
+        foreach ($fromParts as $fromPart)
+        {
+            if ($fromPart->getAlias() == $alias)
+            {
+                return $fromPart->getFrom();
+            }
+        }
+
+        //when the from part doesnt have it, we first find the join field defined
+        //by the alias
+        $AST = $qb->getQuery()->getAST();
+
+        $field = null;
+        foreach ($AST->fromClause->identificationVariableDeclarations[0]->joinVariableDeclarations as $joinVariable)
+        {
+            if ($alias == $joinVariable->join->aliasIdentificationVariable)
+            {
+                $field = $joinVariable->join->joinAssociationPathExpression->associationField;
+                break;
+            }
+        }
+        if (is_null($field))
+        {
+            throw new Application_DataGrid_Exception("No field found.");
+        }
+
+        //iterate over the fromparts, get the metadata from it and
+        //iterate then over the association mappings to find the specific
+        //model for the alias
+        foreach ($fromParts as $fromPart)
+        {
+            $metadata = $this->entityManager->getClassMetadata($fromPart->getFrom());
+            foreach ($metadata->associationMappings as $mapping)
+            {
+                if ($mapping['fieldName'] == $field)
+                {
+                    return $mapping['targetEntity'];
+                }
+            }
+        }
+
+        throw new Application_DataGrid_Exception("No model found.");
+    }
+
+    /**
+     * Returns the field name used by the QueryBuilder for the supplied column name
+     * @see Application_DataGrid_Column
+     * @param string $name
+     * @return string 
+     */
+    protected function getFieldForColumn($name)
+    {
+        if (array_key_exists($name, $this->fields))
+        {
+            return $this->fields[$name]['field'];
+        }
+        return null;
+    }
+
+    /**
+     * Returns the field title used by the QueryBuilder for the supplied column name
+     * @see Application_DataGrid_Column
+     * @param string $name
+     * @return string 
+     */
+    protected function getTitleForColumn($name)
+    {
+        if (array_key_exists($name, $this->fields))
+        {
+            return $this->fields[$name]['title'];
+        }
+        return null;
+    }
+
+    /**
+     * Returns the field type used by the QueryBuilder for the supplied column name
+     * @see Application_DataGrid_Column
+     * @param string $name
+     * @return string 
+     */
+    protected function getTypeForColumn($name)
+    {
+        if (array_key_exists($name, $this->fields))
+        {
+            return $this->fields[$name]['type'];
+        }
+        return null;
+    }
+
+    protected function formatTitle($title)
+    {
+        // First split camelcase into words
+        $title = implode(' ', preg_split('/([[:upper:]][[:lower:]]+)/', $title, null, PREG_SPLIT_DELIM_CAPTURE | PREG_SPLIT_NO_EMPTY));
+        // then replace underscores with spaces
+        return ucwords(str_replace('_', ' ', $title));
     }
 
 }

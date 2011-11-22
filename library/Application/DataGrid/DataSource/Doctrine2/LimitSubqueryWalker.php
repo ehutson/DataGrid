@@ -38,7 +38,8 @@
  */
 use Doctrine\ORM\Query\TreeWalkerAdapter,
     Doctrine\ORM\Query\AST\SelectStatement,
-    Doctrine\ORM\Query\AST\SimpleSelectExpression,
+    //Doctrine\ORM\Query\AST\SimpleSelectExpression,
+    Doctrine\ORM\Query\AST\SelectExpression,
     Doctrine\ORM\Query\AST\PathExpression,
     Doctrine\ORM\Query\AST\AggregateExpression;
 
@@ -68,9 +69,10 @@ class Application_DataGrid_DataSource_Doctrine2_LimitSubqueryWalker extends Tree
         foreach ($this->_getQueryComponents() AS $dqlAlias => $qComp)
         {
 
-            // skip mixed data in query
+            // preserve mixed data in query for ordering
             if (isset($qComp['resultVariable']))
             {
+                $selectExpressions[] = new SelectExpression($qComp['resultVariable'], $dqlAlias);
                 continue;
             }
 
@@ -88,21 +90,30 @@ class Application_DataGrid_DataSource_Doctrine2_LimitSubqueryWalker extends Tree
         );
         $pathExpression->type = PathExpression::TYPE_STATE_FIELD;
 
-        $AST->selectClause->selectExpressions = array(
-            new SimpleSelectExpression($pathExpression)
-        );
+        array_unshift($selectExpressions, new SelectExpression($pathExpression, '_dctrn_id'));
+        $AST->selectClause->selectExpressions = $selectExpressions;
+
+        /*
+          $AST->selectClause->selectExpressions = array(
+          new SimpleSelectExpression($pathExpression)
+          );
+         */
 
         if (isset($AST->orderByClause))
         {
             foreach ($AST->orderByClause->orderByItems as $item)
             {
-                $pathExpression = new PathExpression(
-                                PathExpression::TYPE_STATE_FIELD | PathExpression::TYPE_SINGLE_VALUED_ASSOCIATION,
-                                $item->expression->identificationVariable,
-                                $item->expression->field
-                );
-                $pathExpression->type = PathExpression::TYPE_STATE_FIELD;
-                $AST->selectClause->selectExpressions[] = new SimpleSelectExpression($pathExpression);
+                if ($item->expression instanceof PathExpression)
+                {
+                    $pathExpression = new PathExpression(
+                                    PathExpression::TYPE_STATE_FIELD | PathExpression::TYPE_SINGLE_VALUED_ASSOCIATION,
+                                    $item->expression->identificationVariable,
+                                    $item->expression->field
+                    );
+                    $pathExpression->type = PathExpression::TYPE_STATE_FIELD;
+                    //$AST->selectClause->selectExpressions[] = new SimpleSelectExpression($pathExpression);
+                    $AST->selectClause->selectExpressions[] = new SelectExpression($pathExpression, '_dctrn_ord' . $this->_aliasCounter++);
+                }
             }
         }
 

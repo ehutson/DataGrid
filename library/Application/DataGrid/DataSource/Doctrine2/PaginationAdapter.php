@@ -33,6 +33,7 @@ class Application_DataGrid_DataSource_Doctrine2_PaginationAdapter implements \Ze
      * @var string 
      */
     protected $namespace = 'pgid';
+    protected $whereInHints = array();
 
     /**
      * Constructor
@@ -93,6 +94,11 @@ class Application_DataGrid_DataSource_Doctrine2_PaginationAdapter implements \Ze
         $this->namespace = $ns;
     }
 
+    public function setWhereInHints(array $hints = array())
+    {
+        $this->whereInHints = $hints;
+    }
+
     /**
      *
      * @return int 
@@ -101,9 +107,7 @@ class Application_DataGrid_DataSource_Doctrine2_PaginationAdapter implements \Ze
     {
         if (is_null($this->rowCount))
         {
-            $this->setRowCount(
-                    $this->setRowCount($this->createCountQuery())
-            );
+            $this->setRowCount($this->createCountQuery());
         }
         return $this->rowCount;
     }
@@ -139,7 +143,7 @@ class Application_DataGrid_DataSource_Doctrine2_PaginationAdapter implements \Ze
      */
     protected function createCountQuery()
     {
-        return Paginate::createCountQuery($this->query);
+        return Application_DataGrid_DataSource_Doctrine2_Paginate::createCountQuery($this->query);
     }
 
     /**
@@ -150,7 +154,7 @@ class Application_DataGrid_DataSource_Doctrine2_PaginationAdapter implements \Ze
      */
     protected function createLimitSubquery($offset, $itemCountPerPage)
     {
-        return Paginate::createLimitSubquery($this->query, $offset, $itemCountPerPage);
+        return Application_DataGrid_DataSource_Doctrine2_Paginate::createLimitSubquery($this->query, $offset, $itemCountPerPage);
     }
 
     /**
@@ -160,7 +164,7 @@ class Application_DataGrid_DataSource_Doctrine2_PaginationAdapter implements \Ze
      */
     protected function createWhereInQuery($ids)
     {
-        return Paginate::createWhereInQuery($this->query, $ids, $this->namespace);
+        return Application_DataGrid_DataSource_Doctrine2_Paginate::createWhereInQuery($this->query, $ids, $this->namespace, $this->whereInHints);
     }
 
 }

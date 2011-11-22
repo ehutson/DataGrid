@@ -66,7 +66,7 @@ class Application_DataGrid_DataSource_Doctrine2_OrderByWalker extends TreeWalker
                         $sidx
         );
         $pathExpression->type = PathExpression::TYPE_STATE_FIELD;
-        
+
 
         $orderByItem = new orderByItem($pathExpression);
         $orderByItem->type = $sord;
@@ -76,9 +76,9 @@ class Application_DataGrid_DataSource_Doctrine2_OrderByWalker extends TreeWalker
         /**
          * Remove all other orderby items and add Pike_Grid orderfield.
          */
-        
         if (null === $AST->orderByClause)
         {
+
             $obc = new OrderByClause($orderByItems);
             $AST->orderByClause = $obc;
         }

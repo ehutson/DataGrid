@@ -93,7 +93,7 @@ class Application_DataGrid_DataSource_Doctrine2_Paginate
         /* @var $countQuery Query */
         $countQuery = self::cloneQuery($query);
 
-        $countQuery->setHint(Query::HINT_CUSTOM_TREE_WALKERS, array('\Application_DataGrid_DataSource_Doctrine_CountWalker'));
+        $countQuery->setHint(Query::HINT_CUSTOM_TREE_WALKERS, array('Application_DataGrid_DataSource_Doctrine2_CountWalker'));
         $countQuery->setFirstResult(null)->setMaxResults(null);
 
         $countQuery->setParameters($query->getParameters());
@@ -112,7 +112,7 @@ class Application_DataGrid_DataSource_Doctrine2_Paginate
         /* @var $subQuery Query */
         $subQuery = self::cloneQuery($query);
 
-        $subQuery->setHint(Query::HINT_CUSTOM_TREE_WALKERS, array('\Application_DataGrid_DataSource_Doctrine2_LimitSubqueryWalker'));
+        $subQuery->setHint(Query::HINT_CUSTOM_TREE_WALKERS, array('Application_DataGrid_DataSource_Doctrine2_LimitSubqueryWalker'));
         $subQuery->setFirstResult($offset)->setMaxResults($itemCountPerPage);
 
         $subQuery->setParameters($query->getParameters());
@@ -137,7 +137,7 @@ class Application_DataGrid_DataSource_Doctrine2_Paginate
             $whereInQuery->setParameters($query->getParameters());
 
             $hints = array();
-            $hints[Query::HINT_CUSTOM_TREE_WALKERS] = array('Application_DataGrid_Datasource_Doctrine2_WhereInWalker');
+            $hints[Query::HINT_CUSTOM_TREE_WALKERS] = array('Application_DataGrid_DataSource_Doctrine2_WhereInWalker');
             $hints['id.count'] = count($ids);
             $hints['pg.ns'] = $namespace;
 
@@ -154,7 +154,9 @@ class Application_DataGrid_DataSource_Doctrine2_Paginate
             }
 
             foreach ($hints as $name => $hint)
+            {
                 $whereInQuery->setHint($name, $hint);
+            }
 
             $whereInQuery->setFirstResult(null)->setMaxResults(null);
             foreach ($ids as $i => $id)
